@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>推しスケジュール 自動登録</title>
+  <style>
+    body {
+      font-family: 'Noto Sans JP', sans-serif;
+      max-width: 600px;
+      margin: 2em auto;
+      padding: 1.5em;
+      background-color: #f8f8ff;
+      color: #333;
+    }
+    textarea {
+      width: 100%;
+      height: 100px;
+      font-size: 16px;
+      padding: 1em;
+      border-radius: 10px;
+      border: 2px solid #e0e0ff;
+      background-color: #fff;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    input, button {
+      font-size: 16px;
+      padding: 0.75em;
+      margin-top: 0.5em;
+      width: 100%;
+      border-radius: 10px;
+      border: 2px solid #e0e0ff;
+      background-color: #fff;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      transition: all 0.3s ease;
+    }
+    input:focus, textarea:focus {
+      outline: none;
+      border-color: #8a5dfe;
+      box-shadow: 0 0 0 3px rgba(138, 93, 254, 0.2);
+    }
+    button {
+      background-color: #8a5dfe;
+      color: white;
+      border: none;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    button:hover {
+      background-color: #7346e0;
+      transform: translateY(-2px);
+    }
+    label {
+      font-weight: bold;
+      margin-top: 1.5em;
+      display: block;
+      color: #4a2d99;
+    }
+    .event-list {
+      margin-top: 2em;
+      padding: 1em;
+      background-color: white;
+      border-radius: 15px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .event-item {
+      border-bottom: 1px solid #e0e0ff;
+      padding: 1em;
+      display: flex;
+      align-items: center;
+      position: relative;
+    }
+    .delete-btn {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: #ff69b4;
+      color: white;
+      border: none;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s ease;
+      font-size: 14px;
+      font-weight: bold;
+    }
+    .delete-btn:hover {
+      background: #ff1493;
+      transform: translateY(-50%) scale(1.1);
+    }
+    .event-item:last-child {
+      border-bottom: none;
+    }
+    .event-date {
+      font-weight: bold;
+      color: #8a5dfe;
+      margin-right: 1em;
+    }
+    .event-title {
+      flex: 1;
+      color: #333;
+    }
+    .event-memo {
+      color: #666;
+      font-size: 0.9em;
+    }
+  </style>
+</head>
+<body>
+  <div style="text-align: center; margin-bottom: 2em;">
+    <div style="display: inline-block;">
+
+      <div id="image-container" style="position: relative; width: 150px; height: 150px; margin: 0 auto; border-radius: 50%; overflow: hidden; cursor: pointer;">
+      <img id="oshi-image" src="https://via.placeholder.com/150" 
+           style="width: 100%; height: 100%; object-fit: cover;" 
+           title="写真をクリックして変更">
+      <input type="file" id="image-upload" style="display: none;" accept="image/*">
+      
+      <!-- モーダルウィンドウのHTML -->
+      <div id="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000;">
+        <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 10px; max-width: 80%; max-height: 80%;">
+          <img id="modal-image" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+          <button id="close-modal" style="position: absolute; top: 10px; right: 10px; background: #ff69b4; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">閉じる</button>
+        </div>
+      </div>
+    </div>
+
+    <input type="text" id="oshi-name" placeholder="推しの名前を入力" 
+           style="text-align: center; font-size: 1.8em; font-weight: bold; margin: 1em 0; width: 100%; border: none; background: none; color: #4a2d99;">
+  </div>
+
+  <label for="post-text">XやInstagramの投稿文をここにコピペしてください</label>
+  <textarea id="post-text" placeholder="例：6/20 夜8時からライブ配信！ぜひ来てね"></textarea>
+
+  <button id="extract-btn" style="margin-bottom: 1em;">自動抽出</button>
+
+  <label for="event-date">日付</label>
+  <input type="date" id="event-date" />
+
+  <label for="event-title">タイトル</label>
+  <input type="text" id="event-title" placeholder="タイトルを入力" />
+
+  <label for="event-memo">メモ</label>
+  <input type="text" id="event-memo" placeholder="メモがあれば入力" />
+
+  <button id="add-event-btn">手動追加</button>
+
+  <div class="event-list" id="event-list"></div>
+
+  <!-- chrono.js ライブラリ -->
+  <script src="https://cdn.jsdelivr.net/npm/chrono-node@2.3.4/build/chrono.min.js"></script>
+  <script>
+    // chrono.jsの設定
+    const chrono = window.chrono;
+    // 日本語の解析を有効化
+    chrono.locales.JA = {
+      patterns: {
+        Y: ["(\d{4})年"],
+        M: ["(\d{1,2})月"],
+        D: ["(\d{1,2})日"],
+        H: ["午後(\d{1,2})時", "(\d{1,2})時"],
+        m: ["(\d{1,2})分"],
+        s: ["(\d{1,2})秒"]
+      },
+      parsers: [
+        new chrono.Parser({
+          pattern: /(?<month>\d{1,2})月(?<day>\d{1,2})日/,
+          extract: (text, ref) => {
+            const match = text.match(/(?<month>\d{1,2})月(?<day>\d{1,2})日/);
+            if (!match) return null;
+            return {
+              start: {
+                month: parseInt(match.groups.month),
+                day: parseInt(match.groups.day)
+              }
+            };
+          }
+        }),
+        new chrono.Parser({
+          pattern: /(?<month>\d{1,2})月(?<day>\d{1,2})日\s*(?<hour>\d{1,2})時/,
+          extract: (text, ref) => {
+            const match = text.match(/(?<month>\d{1,2})月(?<day>\d{1,2})日\s*(?<hour>\d{1,2})時/);
+            if (!match) return null;
+            return {
+              start: {
+                month: parseInt(match.groups.month),
+                day: parseInt(match.groups.day),
+                hour: parseInt(match.groups.hour)
+              }
+            };
+          }
+        })
+      ]
+    };
+    // 日本語解析を有効化
+    chrono.parseDate = (text, ref) => {
+      return chrono.parse(text, ref, { forwardDate: true, language: 'JA' })[0]?.start.date() || null;
+    };
+  </script>
+
+  <script>
+    // 保存用のローカルストレージキー
+    const STORAGE_KEY = 'oshiScheduleEvents';
+    const OSHI_INFO_KEY = 'oshiInfo';
+
+    // デフォルトの写真URL
+    const DEFAULT_IMAGE_URL = 'https://via.placeholder.com/100';
+
+    // 推しの情報の読み込み
+    function loadOshiInfo() {
+      const info = localStorage.getItem(OSHI_INFO_KEY);
+      return info ? JSON.parse(info) : { name: '', imageUrl: DEFAULT_IMAGE_URL };
+    }
+
+    // 推しの情報の保存
+    function saveOshiInfo(info) {
+      localStorage.setItem(OSHI_INFO_KEY, JSON.stringify(info));
+    }
+
+    // 推しの情報を初期表示
+    function initOshiInfo() {
+      const info = loadOshiInfo();
+      document.getElementById('oshi-image').src = info.imageUrl;
+      document.getElementById('oshi-name').value = info.name;
+    }
+
+    // 写真選択のイベント設定
+    document.getElementById('image-container').addEventListener('click', () => {
+      document.getElementById('image-upload').click();
+    });
+
+    // ファイル選択後の処理
+    document.getElementById('image-upload').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const imageUrl = e.target.result;
+          document.getElementById('oshi-image').src = imageUrl;
+          // 画像を保存
+          const info = loadOshiInfo();
+          info.imageUrl = imageUrl;
+          saveOshiInfo(info);
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    // モーダルの閉じるボタンと背景クリックのイベント設定
+    document.getElementById('close-modal').addEventListener('click', () => {
+      document.getElementById('modal').style.display = 'none';
+    });
+
+    document.getElementById('modal').addEventListener('click', (e) => {
+      if (e.target.id === 'modal') {
+        e.target.style.display = 'none';
+      }
+    });
+
+    // キーボードのESCキーでモーダルを閉じる
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        document.getElementById('modal').style.display = 'none';
+      }
+    });
+
+    document.getElementById('image-upload').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const imageUrl = e.target.result;
+          document.getElementById('oshi-image').src = imageUrl;
+          saveOshiInfo({
+            name: document.getElementById('oshi-name').value,
+            imageUrl: imageUrl
+          });
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    // 名前入力のイベント設定
+    document.getElementById('oshi-name').addEventListener('input', (e) => {
+      const info = loadOshiInfo();
+      info.name = e.target.value;
+      saveOshiInfo(info);
+    });
+
+    // 初期表示
+    initOshiInfo();
+
+    // イベント一覧読み込み
+    function loadEvents() {
+      const json = localStorage.getItem(STORAGE_KEY);
+      return json ? JSON.parse(json) : [];
+    }
+
+    // イベント一覧読み込み
+    function loadEvents() {
+      const json = localStorage.getItem(STORAGE_KEY);
+      return json ? JSON.parse(json) : [];
+    }
+
+    // イベント一覧保存
+    function saveEvents(events) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+    }
+
+    // イベントを画面に表示
+    function renderEvents() {
+      const events = loadEvents();
+      const container = document.getElementById('event-list');
+      container.innerHTML = '';
+      if(events.length === 0) {
+        container.textContent = 'まだ予定はありません';
+        return;
+      }
+      const info = loadOshiInfo();
+      events.forEach(ev => {
+        const div = document.createElement('div');
+        div.className = 'event-item';
+        div.innerHTML = `
+          <div style="flex: 1;">
+            <div class="event-date">${ev.date}</div>
+            <div class="event-title">${ev.title}</div>
+            <div class="event-memo">${ev.memo || ''}</div>
+            <div style="position: relative; width: 30px; height: 30px; margin-right: 0.5em;">
+              <img src="${info.imageUrl}" style="width: 100%; height: 100%; border-radius: 50%;">
+            </div>
+          </div>
+          <button class="delete-btn" onclick="deleteEvent(this)">×</button>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    // 日付の正規表現パターン
+    const DATE_PATTERNS = [
+      // 月日（例：6/20, 6/20日）
+      /(?<month>\d{1,2})\/(?<day>\d{1,2})(日)?/,  // 6/20, 6/20日
+      // 月日（例：6月20日）
+      /(?<month>\d{1,2})月(?<day>\d{1,2})日/,      // 6月20日
+      // 年月日（例：2024/6/20, 2024年6月20日）
+      /(?<year>\d{4})年?(?<month>\d{1,2})月(?<day>\d{1,2})日?/,  // 2024年6月20日, 2024/6/20
+      // 年.月.日（例：2025.7.12）
+      /(?<year>\d{4})\.(?<month>\d{1,2})\.(?<day>\d{1,2})/,     // 2025.7.12
+      // 月.日（例：7.12）
+      /(?<month>\d{1,2})\.(?<day>\d{1,2})/,          // 7.12
+      // 月日-月日（例：7.12-7.13）
+      /(?<month>\d{1,2})\.(?<day1>\d{1,2})-(?<day2>\d{1,2})/,    // 7.12-7.13
+      // 年月日-年月日（例：2025.7.12-2025.7.13）
+      /(?<year1>\d{4})\.(?<month1>\d{1,2})\.(?<day1>\d{1,2})-(?<year2>\d{4})\.(?<month2>\d{1,2})\.(?<day2>\d{1,2})/ // 2025.7.12-2025.7.13
+    ];
+
+    // イベントの追加処理
+    function addEvent(date, title, memo) {
+      if(!date || !title) {
+        alert('日付とタイトルは必須です！');
+        return;
+      }
+      
+      // 日付の範囲の場合、複数のイベントを追加
+      const events = loadEvents();
+      const dates = parseDateRange(date);
+      
+      dates.forEach(d => {
+        events.push({ date: d, title, memo });
+      });
+      
+      saveEvents(events);
+      renderEvents();
+      
+      // 入力欄クリア
+      document.getElementById('post-text').value = '';
+      document.getElementById('event-date').value = '';
+      document.getElementById('event-title').value = '';
+      document.getElementById('event-memo').value = '';
+    }
+
+    // 日付の範囲を解析
+    function parseDateRange(date) {
+      const dates = [];
+      
+      // 日付の範囲の場合
+      if (date.includes('-')) {
+        const [start, end] = date.split('-');
+        const [startYear, startMonth, startDay] = parseDate(start);
+        const [endYear, endMonth, endDay] = parseDate(end);
+        
+        const startDate = new Date(startYear, startMonth - 1, startDay);
+        const endDate = new Date(endYear, endMonth - 1, endDay);
+        
+        // 日付の範囲を生成
+        for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+          dates.push(d.toISOString().slice(0, 10));
+        }
+      } else {
+        // 単一の日付の場合
+        const [year, month, day] = parseDate(date);
+        const d = new Date(year, month - 1, day);
+        dates.push(d.toISOString().slice(0, 10));
+      }
+      
+      return dates;
+    }
+
+    // 日付を解析（年、月、日を配列で返す）
+    function parseDate(dateStr) {
+      // 年.月.日の場合
+      const match = dateStr.match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})$/);
+      if (match) {
+        return [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])];
+      }
+      
+      // 月.日の場合
+      const match2 = dateStr.match(/^(\d{1,2})\.(\d{1,2})$/);
+      if (match2) {
+        const today = new Date();
+        return [today.getFullYear(), parseInt(match2[1]), parseInt(match2[2])];
+      }
+      
+      // その他の形式の場合
+      const today = new Date();
+      return [today.getFullYear(), today.getMonth() + 1, today.getDate()];
+    }
+
+    // 自然文から日付を抽出してセット
+    function extractDateFromText(text) {
+      const today = new Date();
+      const year = today.getFullYear();
+      
+      // 各パターンを試す
+      for (const pattern of DATE_PATTERNS) {
+        const match = text.match(pattern);
+        if (match && match.groups) {
+          // 年が指定されていない場合は今年をデフォルトとする
+          const y = match.groups.year ? parseInt(match.groups.year) : year;
+          const m = parseInt(match.groups.month);
+          const d = parseInt(match.groups.day);
+          
+          // 日付オブジェクトを作成
+          const date = new Date(y, m - 1, d);
+          
+          // 現在より前の日付の場合は来年とする
+          if (date < today) {
+            date.setFullYear(y + 1);
+          }
+          
+          return date.toISOString().slice(0, 10);
+        }
+      }
+      return '';
+    }
+
+    // タイトル候補をテキストからざっくり抜き出す
+    function extractTitleFromText(text) {
+      // 日付パターンを削除
+      const cleanedText = text.replace(/(\d{1,2}月\d{1,2}日|\d{1,2}日|\d{1,2}時|午前|午後|昼|夜)/g, '');
+      // 不要なスペースを削除
+      const trimmedText = cleanedText.trim();
+      // 最初の30文字をタイトルとして使用
+      return trimmedText.slice(0, 30);
+    }
+
+    // イベント追加処理
+    function addEvent(date, title, memo) {
+      if(!date || !title) {
+        alert('日付とタイトルは必須です！');
+        return;
+      }
+      const events = loadEvents();
+      events.push({ date, title, memo });
+      saveEvents(events);
+      renderEvents();
+    }
+
+    // イベントの削除
+    function deleteEvent(button) {
+      // 親要素（event-item）から日付とタイトルを取得
+      const eventItem = button.closest('.event-item');
+      const date = eventItem.querySelector('.event-date').textContent;
+      const title = eventItem.querySelector('.event-title').textContent;
+      
+      if (!confirm('本当に削除しますか？')) {
+        return;
+      }
+      
+      const events = loadEvents();
+      const filteredEvents = events.filter(ev => !(ev.date === date && ev.title === title));
+      saveEvents(filteredEvents);
+      renderEvents();
+    }
+
+    // DOMイベント設定
+    document.getElementById('extract-btn').addEventListener('click', () => {
+      const text = document.getElementById('post-text').value;
+      if(!text) {
+        alert('投稿文を入力してください');
+        return;
+      }
+      const date = extractDateFromText(text);
+      if(!date) {
+        alert('日付が抽出できませんでした。投稿文を見直してください。');
+        return;
+      }
+      const title = extractTitleFromText(text);
+      
+      // 抽出結果を表示
+      document.getElementById('event-date').value = date;
+      document.getElementById('event-title').value = title || '';
+      document.getElementById('event-memo').value = text;
+      
+      // フォームの入力欄をアクティブにする
+      document.getElementById('event-title').focus();
+    });
+
+    // イベントの追加処理（両方のボタンで共通）
+    function addEvent() {
+      const date = document.getElementById('event-date').value;
+      const title = document.getElementById('event-title').value.trim();
+      const memo = document.getElementById('event-memo').value.trim();
+      
+      if(!date || !title) {
+        alert('日付とタイトルは必須です！');
+        return;
+      }
+      
+      const events = loadEvents();
+      events.push({ date, title, memo });
+      saveEvents(events);
+      renderEvents();
+      
+      // 入力欄クリア
+      document.getElementById('post-text').value = '';
+      document.getElementById('event-date').value = '';
+      document.getElementById('event-title').value = '';
+      document.getElementById('event-memo').value = '';
+    }
+
+    // 自動抽出ボタンのクリックイベント
+    document.getElementById('extract-btn').addEventListener('click', () => {
+      const text = document.getElementById('post-text').value;
+      if(!text) {
+        alert('投稿文を入力してください');
+        return;
+      }
+      const date = extractDateFromText(text);
+      if(!date) {
+        alert('日付が抽出できませんでした。投稿文を見直してください。');
+        return;
+      }
+      const title = extractTitleFromText(text);
+      
+      // 抽出結果を表示
+      document.getElementById('event-date').value = date;
+      document.getElementById('event-title').value = title || '';
+      document.getElementById('event-memo').value = text;
+      
+      // イベントを追加
+      addEvent();
+    });
+
+    // 手動追加ボタンのクリックイベント
+    document.getElementById('add-event-btn').addEventListener('click', () => {
+      addEvent();
+    });
+
+    document.getElementById('add-event-btn').addEventListener('click', () => {
+      const date = document.getElementById('event-date').value;
+      const title = document.getElementById('event-title').value.trim();
+      const memo = document.getElementById('event-memo').value.trim();
+      addEvent(date, title, memo);
+      // 入力欄クリア
+      document.getElementById('post-text').value = '';
+      document.getElementById('event-date').value = '';
+      document.getElementById('event-title').value = '';
+      document.getElementById('event-memo').value = '';
+    });
+
+    // 初期表示
+    renderEvents();
+  </script>
+</body>
+</html>
